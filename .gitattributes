@@ -1,0 +1,8 @@
+EfficientNet-PyTorch/efficientnet-b6-c76e70fd.pth filter=lfs diff=lfs merge=lfs -text
+EfficientNet-PyTorch/efficientnet-b7-dcc49843.pth filter=lfs diff=lfs merge=lfs -text
+EfficientNet-PyTorch/efficientnet-b0-08094119.pth filter=lfs diff=lfs merge=lfs -text
+EfficientNet-PyTorch/efficientnet-b1-dbc7070a.pth filter=lfs diff=lfs merge=lfs -text
+EfficientNet-PyTorch/efficientnet-b2-27687264.pth filter=lfs diff=lfs merge=lfs -text
+EfficientNet-PyTorch/efficientnet-b3-c8376fa2.pth filter=lfs diff=lfs merge=lfs -text
+EfficientNet-PyTorch/efficientnet-b4-e116e8b3.pth filter=lfs diff=lfs merge=lfs -text
+EfficientNet-PyTorch/efficientnet-b5-586e6cc6.pth filter=lfs diff=lfs merge=lfs -text
