@@ -122,7 +122,7 @@ for i in range(epochs):
     logits = []
     labels = []
     for x, y in pb:
-        logits += [model(x.float()).detach().cpu().numpy()]
+        logits += [model(x.float() / 255.0).detach().cpu().numpy()]
         labels += [y.detach().cpu().numpy()]
         pb.update(1)
     pb.close()
