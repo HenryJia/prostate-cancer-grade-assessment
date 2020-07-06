@@ -37,8 +37,19 @@ for idx in df['image_id']:
 df = df[mask_present]
 
 transforms = Compose([HorizontalFlip(p=0.5), VerticalFlip(p=0.5), Transpose(p=0.5)])
-dataset = PandaDataset(root_path, df, level=1, patch_size=256, num_patches=32, mode='train', use_mask=True)
-dataloader = DataLoader(dataset, batch_size=32, shuffle=True, pin_memory=False, num_workers=4)
+dataset = PandaDataset(root_path, df, level=1, patch_size=256, num_patches=16, mode='train', use_mask=True)
+dataloader = DataLoader(dataset, batch_size=2, shuffle=False, pin_memory=False, num_workers=16)
+
+t0 = time.time()
+x, y = dataset[2209]
+t1 = time.time()
+print(t1 - t0)
+x, y = dataset[0]
+t2 = time.time()
+print(t2 - t1)
+
+for x, y, in tqdm(dataloader, total=len(dataloader)):
+    pass
 
 cmap = matplotlib.colors.ListedColormap(['black', 'gray', 'red'])
 for j in range(5):

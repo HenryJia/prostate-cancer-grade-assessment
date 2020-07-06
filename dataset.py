@@ -1,4 +1,5 @@
 import os
+import time
 
 # There are two ways to load the data from the PANDA dataset:
 # Option 1: Load images using openslide
@@ -27,21 +28,25 @@ class PandaDataset(Dataset):
         self.use_mask = use_mask
         self.transforms = transforms
 
+        # Note: On the training set, the spacings have a mean and stddev of 0.47919909031475766 and 0.0192301637137064 so we needn't worry about them
+        #spacing = 1 / (float(image.properties['tiff.XResolution']) / 10000)
 
     def __getitem__(self, idx):
         path = os.path.join(self.root_path, 'train_images') if self.mode == 'train' else os.path.join(self.root_path, 'test_images')
         # Skimage seems to be slightly faster
         #image = openslide.OpenSlide(os.path.join(path, self.df['image_id'].iloc[idx] + '.tiff'))
-        image = MultiImage(os.path.join(path, self.df['image_id'].iloc[idx] + '.tiff'))[self.level]
+        image = MultiImage(os.path.join(path, self.df['image_id'].iloc[idx] + '.tiff'), conserve_memory=False)[self.level]
 
-        # On the training set, the spacings have a mean and stddev of 0.47919909031475766 and 0.0192301637137064 so we needn't worry about them
-        #spacing = 1 / (float(image.properties['tiff.XResolution']) / 10000)
 
         if self.num_patches:
             #image = np.array(image.read_region((0, 0), self.level, image.level_dimensions[self.level]))
 
-            ## Only look at regions of the image that aren't empty space and put a bounding box on it
-            regions = np.stack(np.where(~np.all(image == [255, 255, 255], axis=-1)), axis=1)
+            # Only look at regions of the image that aren't empty space and put a bounding box on it
+            # Find those regions using a subsampled image, since NumPy is slow
+            stride = 32
+            regions = np.stack(np.where(np.all(image[::stride, ::stride] != 255, axis=-1)), axis=1) * stride
+            if len(regions) == 0: # In case we have a completely blank image
+                regions = np.array(((0, 0, 0), image.shape))
             start = np.min(regions, axis=0)
             end = np.max(regions, axis=0)
             shape = end - start
@@ -55,8 +60,7 @@ class PandaDataset(Dataset):
 
             if image.shape[0] < self.num_patches: # Pad up to reach the number of desired patches if we don't have enough
                 image = np.pad(image, ((0, self.num_patches - image.shape[0]), (0, 0), (0, 0), (0, 0)), constant_values=255)
-            #proportion_blank = np.mean(np.all(image == [255, 255, 255, 255], axis=3), axis=(1, 2))
-            proportion_blank = np.mean((image - np.array([255, 255, 255])) ** 2, axis=(1, 2, 3))
+            proportion_blank = np.mean((image - 255) ** 2, axis=(1, 2, 3))
 
             selected_patches = np.argsort(proportion_blank)[-self.num_patches:]
             image = np.transpose(image[selected_patches], (0, 3, 1, 2))
@@ -67,7 +71,8 @@ class PandaDataset(Dataset):
 
             if self.use_mask:
                 #mask = openslide.OpenSlide(os.path.join(self.root_path, 'train_label_masks', self.df['image_id'].iloc[idx] + '_mask.tiff'))
-                mask = MultiImage(os.path.join(self.root_path, 'train_label_masks', self.df['image_id'].iloc[idx] + '_mask.tiff'))[self.level][start[0]:end[0], start[1]:end[1], 0]
+                mask = MultiImage(os.path.join(self.root_path, 'train_label_masks', self.df['image_id'].iloc[idx] + '_mask.tiff'), conserve_memory=False)[self.level]
+                mask = mask[start[0]:end[0], start[1]:end[1], 0]
 
                 if self.num_patches: # Apply the identical operations to the masks
                     #mask = np.array(mask.read_region((0, 0), self.level, mask.level_dimensions[self.level]))[start[0]:end[0], start[1]:end[1], 0]

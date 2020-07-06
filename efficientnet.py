@@ -76,7 +76,7 @@ for idx in df['image_id']:
     mask_present += [os.path.isfile(os.path.join(root_path, 'train_label_masks', idx + '_mask.tiff'))]
 df = df[mask_present]
 
-train_df, validation_df = train_test_split(df)
+train_df, validation_df = train_test_split(df, test_size=0.1)
 
 train_set = PandaDataset(root_path, train_df, level=level, patch_size=patch_size, num_patches=num_patches, mode='train', use_mask=False)
 validation_set = PandaDataset(root_path, validation_df, level=level, patch_size=patch_size, num_patches=num_patches, mode='train', use_mask=False)
@@ -104,12 +104,12 @@ for i in range(epochs):
     avg_loss = 0
     for x, y in pb:
         optim.zero_grad()
-        logits = model(x.float())
+        logits = model(x.float() / 255.0)
         loss = criterion(logits, y)
         loss.backward()
         optim.step()
 
-        avg_loss = 0.1 * loss.item() + 0.9 * avg_loss
+        avg_loss = 0.05 * loss.item() + 0.95 * avg_loss
         pb.update(1)
         pb.set_postfix(loss=avg_loss)
     pb.close()
@@ -118,7 +118,7 @@ for i in range(epochs):
 
     print('Validating epoch', i)
     model.eval()
-    pb = tqdm(validation_dataloader, total=len(train_dataloader))
+    pb = tqdm(validation_dataloader, total=len(validation_dataloader))
     logits = []
     labels = []
     for x, y in pb:
@@ -130,8 +130,8 @@ for i in range(epochs):
     logits = np.concatenate(logits, axis=0)
     labels = np.concatenate(labels, axis=0)
     out = 1.0 / (1.0 + np.exp(-logits))
-    loss = -np.mean(labels * np.log(out) + (1 - labels) * np.log(1 - out))
-    kappa = cohen_kappa_score(np.sum(out, axis=-1).round(), labels.sum(out_axis=-1))
+    loss = -np.mean(labels * np.log(np.clip(out, 1e-5, 1 - 1e-5)) + (1 - labels) * np.log(np.clip(1 - out, 1e-5, 1 - 1e-5)))
+    kappa = cohen_kappa_score(np.sum(out, axis=-1).round(), labels.sum(axis=-1), weights='quadratic')
 
     print('Validation loss {} and kappa {}'.format(loss, kappa))
 
