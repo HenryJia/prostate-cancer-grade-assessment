@@ -119,17 +119,16 @@ for i in range(epochs):
     print('Validating epoch', i)
     model.eval()
     pb = tqdm(validation_dataloader, total=len(validation_dataloader))
-    logits = []
+    out = []
     labels = []
     for x, y in pb:
-        logits += [model(x.float() / 255.0).detach().cpu().numpy()]
+        out += [torch.sigmoid(model(x.float() / 255.0)).detach().cpu().numpy()]
         labels += [y.detach().cpu().numpy()]
         pb.update(1)
     pb.close()
 
-    logits = np.concatenate(logits, axis=0)
+    out = np.concatenate(out, axis=0)
     labels = np.concatenate(labels, axis=0)
-    out = 1.0 / (1.0 + np.exp(-logits))
     loss = -np.mean(labels * np.log(np.clip(out, 1e-5, 1 - 1e-5)) + (1 - labels) * np.log(np.clip(1 - out, 1e-5, 1 - 1e-5)))
     kappa = cohen_kappa_score(np.sum(out, axis=-1).round(), labels.sum(axis=-1), weights='quadratic')
 
