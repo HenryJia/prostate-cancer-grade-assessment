@@ -36,8 +36,8 @@ for idx in df['image_id']:
     mask_present += [os.path.isfile(os.path.join(root_path, 'train_label_masks', idx + '_mask.tiff'))]
 df = df[mask_present]
 
-transforms = Compose([HorizontalFlip(p=0.5), VerticalFlip(p=0.5), Transpose(p=0.5)])
-dataset = PandaDataset(root_path, df, level=1, patch_size=256, num_patches=16, mode='train', use_mask=True)
+transforms = Compose([Transpose(p=0.5), HorizontalFlip(p=0.5), VerticalFlip(p=0.5)])
+dataset = PandaDataset(root_path, df, level=1, patch_size=256, num_patches=32, use_mask=True, transforms=transforms)
 dataloader = DataLoader(dataset, batch_size=2, shuffle=False, pin_memory=False, num_workers=16)
 
 t0 = time.time()
@@ -48,18 +48,18 @@ x, y = dataset[0]
 t2 = time.time()
 print(t2 - t1)
 
-for x, y, in tqdm(dataloader, total=len(dataloader)):
-    pass
+#for x, y, in tqdm(dataloader, total=len(dataloader)):
+    #pass
 
 cmap = matplotlib.colors.ListedColormap(['black', 'gray', 'red'])
 for j in range(5):
     t0 = time.time()
-    image, (mask, label) = dataset[j]
+    image, (mask, label) = dataset[0]
     print('Dataloading time', time.time() - t0)
     plt.figure(figsize=(32, 32))
 
     for i in range(32):
         plt.subplot(8, 8, 2 * i + 1)
-        plt.imshow(image[i])
+        plt.imshow(image[i].permute(1, 2, 0).numpy())
         plt.subplot(8, 8, 2 * (i + 1))
         plt.imshow(mask[i], cmap=cmap, interpolation='nearest', vmin=0, vmax=2)

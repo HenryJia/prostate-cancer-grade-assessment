@@ -1,10 +1,14 @@
 import time
 import os
+from argparse import ArgumentParser
 
 import numpy as np
 import pandas as pd
 import cv2
 import PIL.Image
+
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import cohen_kappa_score
 
 import torch
 import torch.nn as nn
@@ -16,8 +20,10 @@ from torch.utils.data.sampler import SubsetRandomSampler, RandomSampler, Sequent
 
 from albumentations import Compose, HorizontalFlip, VerticalFlip, Transpose
 
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import cohen_kappa_score
+import pytorch_lightning as pl
+from pytorch_lightning.core import LightningModule
+from pytorch_lightning.loggers import TensorBoardLogger
+from pytorch_lightning.callbacks import ModelCheckpoint
 
 from dataset import PandaDataset
 from efficientnet_pytorch import model as enet
@@ -29,112 +35,131 @@ plt.ion()
 
 from tqdm import tqdm
 
-class EfficientNetV2(nn.Module):
-    def __init__(self, enet_type, pretrained_model, num_patches, out_dim):
+class EfficientNetV2(LightningModule):
+    def __init__(self, enet_type, pretrained_model, out_dim, precision, epochs, batch_size, num_workers, q_size, lr, warmup_factor, warmup_epo, num_patches, patch_size, level, **kwargs):
         super(EfficientNetV2, self).__init__()
+        self.enet_type = enet_type
+        self.pretrained_model = pretrained_model
+        self.out_dim = out_dim
+        self.precision = precision
+
+        self.epochs = epochs
+        self.batch_size = batch_size
+        self.num_workers = num_workers
+        self.q_size = q_size
+
+        self.lr = lr
+        self.warmup_factor = warmup_factor
+        self.warmup_epo = warmup_epo
+
+        self.num_patches = num_patches
+        self.patch_size = patch_size
+        self.level = level
+
         self.enet = enet.EfficientNet.from_name(enet_type)
         self.enet.load_state_dict(torch.load(pretrained_model))
 
-        self.fc_mixer = nn.Linear(num_patches, 1)
         self.fc_out = nn.Linear(self.enet._fc.in_features, out_dim)
 
-    def extract(self, x):
-        x = self.enet.extract_features(x)
-        return F.adaptive_avg_pool2d(x, 1).squeeze()
-
     def forward(self, x):
-        batch_size, num_patches, height, width, channels = x.shape
+        batch_size, num_patches, channels, height, width = x.shape
 
         # Apply a separate identical enet on every separate patch
-        x = x.view(batch_size * num_patches, height, width, channels)
-        x = self.extract(x).view(batch_size, num_patches, -1)
+        x = x.view(batch_size * num_patches, channels, height, width)
+        x = self.enet.extract_features(x)
+        x = x.view(batch_size, num_patches, x.shape[1], -1)
+        x = torch.mean(torch.max(x, dim=1)[0], dim=2)
 
-        x = self.fc_mixer(x.permute(0, 2, 1)).view(batch_size, -1)
         x = self.fc_out(x)
         return x
 
-root_path = f'/home/nvme/Kaggle/prostate-cancer-grade-assessment/'
+    def configure_optimizers(self):
+        optimizer = optim.Adam(self.parameters(), lr=self.lr/self.warmup_factor)
+        scheduler_cosine = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, self.epochs - self.warmup_epo)
+        scheduler = GradualWarmupScheduler(optimizer, multiplier=self.warmup_factor, total_epoch=self.warmup_epo, after_scheduler=scheduler_cosine)
+        return [optimizer], [scheduler]
 
-enet_type = 'efficientnet-b0'
-pretrained_model = f'EfficientNet-PyTorch/efficientnet-b0-08094119.pth'
+    def prepare_data(self):
+        root_path = f'/home/nvme/Kaggle/prostate-cancer-grade-assessment/'
 
-epochs = 10
-batch_size = 2
-num_workers = 16
-lr = 3e-4
-warmup_factor = 10
-warmup_epo = 1
+        df = pd.read_csv(root_path + 'train.csv')
 
-num_patches = 20
-patch_size = 256
-level = 1
+        mask_present = [] # Only about 100 images in the dataset have no mask so just ignore them for training
+        for idx in df['image_id']:
+            mask_present += [os.path.isfile(os.path.join(root_path, 'train_label_masks', idx + '_mask.tiff'))]
+        df = df[mask_present]
 
-df = pd.read_csv(root_path + 'train.csv')
+        train_df, validation_df = train_test_split(df, test_size=0.1)
 
-mask_present = [] # Only about 100 images in the dataset have no mask so just ignore them for training
-for idx in df['image_id']:
-    mask_present += [os.path.isfile(os.path.join(root_path, 'train_label_masks', idx + '_mask.tiff'))]
-df = df[mask_present]
+        transforms = Compose([Transpose(p=0.5), VerticalFlip(p=0.5), HorizontalFlip(p=0.5)])
+        self.train_set = PandaDataset(root_path, train_df, level=self.level, patch_size=self.patch_size, num_patches=self.num_patches, use_mask=False, transforms=transforms)
+        self.validation_set = PandaDataset(root_path, validation_df, level=self.level, patch_size=self.patch_size, num_patches=self.num_patches, use_mask=False)
 
-train_df, validation_df = train_test_split(df, test_size=0.1)
+    def train_dataloader(self):
+        dataloader = DataLoader(self.train_set, batch_size=self.batch_size, shuffle=True, pin_memory=False, num_workers=self.num_workers)
+        return AsynchronousLoader(dataloader, device=torch.device('cuda', 0), q_size=self.q_size, dtype=torch.float16 if args.precision == 16 else torch.float32)
 
-train_set = PandaDataset(root_path, train_df, level=level, patch_size=patch_size, num_patches=num_patches, mode='train', use_mask=False)
-validation_set = PandaDataset(root_path, validation_df, level=level, patch_size=patch_size, num_patches=num_patches, mode='train', use_mask=False)
+    def val_dataloader(self):
+        dataloader = DataLoader(self.validation_set, batch_size=self.batch_size, shuffle=False, pin_memory=False, num_workers=self.num_workers)
+        return AsynchronousLoader(dataloader, device=torch.device('cuda', 0), q_size=self.q_size, dtype=torch.float16 if args.precision == 16 else torch.float32)
 
-train_dataloader = DataLoader(train_set, batch_size=batch_size, shuffle=True, pin_memory=False, num_workers=num_workers)
-validation_dataloader = DataLoader(validation_set, batch_size=batch_size, shuffle=False, pin_memory=False, num_workers=num_workers)
+    def training_step(self, batch, batch_idx):
+        x, y = batch
 
-train_dataloader = AsynchronousLoader(train_dataloader, device=torch.device('cuda', 0), q_size=5)
-validation_dataloader = AsynchronousLoader(validation_dataloader, device=torch.device('cuda', 0), q_size=5)
+        if self.precision == 16:
+            x = x.half()
+        else:
+            x = x.float()
 
-model = EfficientNetV2(enet_type=enet_type, pretrained_model=pretrained_model, num_patches=num_patches, out_dim=5)
-model = model.cuda(0)
+        out = self(x / 255.0)
+        loss = F.binary_cross_entropy_with_logits(out, y)
 
-optim = optimizer = optim.Adam(model.parameters(), lr=lr/warmup_factor)
-scheduler_cosine = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, epochs - warmup_epo)
-scheduler = GradualWarmupScheduler(optimizer, multiplier=warmup_factor, total_epoch=warmup_epo, after_scheduler=scheduler_cosine)
+        logs = {'train_loss': loss}
+        return {'loss': loss, 'log': logs}
 
-criterion = nn.BCEWithLogitsLoss()
+    def validation_step(self, batch, batch_idx):
+        x, y = batch
 
-best_kappa = 0
-for i in range(epochs):
-    print('\nTraining epoch', i)
-    model.train()
-    pb = tqdm(train_dataloader, total=len(train_dataloader))
-    avg_loss = 0
-    for x, y in pb:
-        optim.zero_grad()
-        logits = model(x.float() / 255.0)
-        loss = criterion(logits, y)
-        loss.backward()
-        optim.step()
+        if self.precision == 16:
+            x = x.half()
+        else:
+            x = x.float()
 
-        avg_loss = 0.05 * loss.item() + 0.95 * avg_loss
-        pb.update(1)
-        pb.set_postfix(loss=avg_loss)
-    pb.close()
-    scheduler.step()
+        out = self(x / 255.0)
+        loss = F.binary_cross_entropy_with_logits(out, y)
 
+        return {'val_loss': loss, 'out': out.detach(), 'y': y}
 
-    print('Validating epoch', i)
-    model.eval()
-    pb = tqdm(validation_dataloader, total=len(validation_dataloader))
-    out = []
-    labels = []
-    for x, y in pb:
-        out += [torch.sigmoid(model(x.float() / 255.0)).detach().cpu().numpy()]
-        labels += [y.detach().cpu().numpy()]
-        pb.update(1)
-    pb.close()
+    def validation_epoch_end(self, outputs):
+        avg_loss = torch.stack([x['val_loss'] for x in outputs], dim=0).mean()
+        out = torch.sigmoid(torch.cat([x['out'] for x in outputs], dim=0)).cpu().numpy()
+        y = torch.cat([x['y'] for x in outputs], dim=0).cpu().numpy()
 
-    out = np.concatenate(out, axis=0)
-    labels = np.concatenate(labels, axis=0)
-    loss = -np.mean(labels * np.log(np.clip(out, 1e-5, 1 - 1e-5)) + (1 - labels) * np.log(np.clip(1 - out, 1e-5, 1 - 1e-5)))
-    kappa = cohen_kappa_score(np.sum(out, axis=-1).round(), labels.sum(axis=-1), weights='quadratic')
+        kappa = cohen_kappa_score(np.sum(out, axis=-1).round(), y.sum(axis=-1), weights='quadratic')
 
-    print('Validation loss {} and kappa {}'.format(loss, kappa))
+        logs = {'val_loss': avg_loss, 'kappa': kappa}
+        return {'val_loss': avg_loss, 'kappa': kappa, 'log': logs}
 
-    if kappa > best_kappa:
-        print('Current kappa greater than previous best kappa of {}. Saving model'.format(best_kappa))
-        best_kappa = kappa
-        torch.save(model.state_dict(), 'efficientnetv2.pth')
+argument_parser = ArgumentParser(add_help=False)
+argument_parser.add_argument('--enet_type', type=str, default='efficientnet-b0', help='Type of efficientnet to use')
+argument_parser.add_argument('--pretrained_model', type=str, default='EfficientNet-PyTorch/efficientnet-b0-08094119.pth', help='location of pretraiend efficientnet')
+argument_parser.add_argument('--epochs', type=int, default=10, help='training epochs')
+argument_parser.add_argument('--batch_size', type=int, default=2, help='training batch size')
+argument_parser.add_argument('--num_workers', type=int, default=16, help='number of workers for dataloaders')
+argument_parser.add_argument('--q_size', type=int, default=5, help='queue size for asynchronous loading')
+argument_parser.add_argument('--lr', type=float, default=3e-4, help='learning rate')
+argument_parser.add_argument('--warmup_factor', type=float, default=10, help='learning rate warmup factor')
+argument_parser.add_argument('--warmup_epo', type=float, default=3e-4, help='learning rate warmup episodes')
+argument_parser.add_argument('--num_patches', type=int, default=20, help='number of patches to take')
+argument_parser.add_argument('--patch_size', type=int, default=256, help='size of patches')
+argument_parser.add_argument('--level', type=int, default=1, help='resolution level of images')
+argument_parser.add_argument('--gpu', type=int, default=0, help='which gpu to use')
+argument_parser.add_argument('--precision', type=int, default=32, help='which gpu to use')
+args = argument_parser.parse_args()
+
+logger = TensorBoardLogger("tb_logs", name="efficientnet")
+checkpoint_callback = ModelCheckpoint(filepath='./efficientnet-ckpt/{epoch:02d}-{kappa:.2f}.ckpt', save_top_k=1, verbose=True, monitor='kappa', mode='max', prefix='')
+trainer = pl.Trainer(max_epochs=args.epochs, gpus=[args.gpu], precision=args.precision, logger=logger, checkpoint_callback=checkpoint_callback, use_amp=True if args.precision == 16 else False)
+
+model = EfficientNetV2(**vars(args), out_dim=5)
+trainer.fit(model)
