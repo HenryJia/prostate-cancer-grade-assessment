@@ -97,7 +97,6 @@ class EfficientNetV2(LightningModule):
         transforms = Compose([Transpose(p=0.5),
                               VerticalFlip(p=0.5),
                               HorizontalFlip(p=0.5),
-                              HueSaturationValue(p=0.5, hue_shift_limit=20, sat_shift_limit=30, val_shift_limit=20),
                               RandomBrightness(p=0.5, limit=0.2),
                               RandomContrast(p=0.5, limit=0.2),
                               RandomGamma(p=0.5, gamma_limit=(80, 120))
