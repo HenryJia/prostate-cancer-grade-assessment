@@ -98,8 +98,7 @@ class EfficientNetV2(LightningModule):
                               VerticalFlip(p=0.5),
                               HorizontalFlip(p=0.5),
                               RandomBrightness(p=0.5, limit=0.2),
-                              RandomContrast(p=0.5, limit=0.2),
-                              RandomGamma(p=0.5, gamma_limit=(80, 120))
+                              RandomContrast(p=0.5, limit=0.2)
                               ])
         self.train_set = PandaDataset(root_path, train_df, level=self.level, patch_size=self.patch_size, num_patches=self.num_patches, use_mask=False, transforms=transforms)
         self.validation_set = PandaDataset(root_path, validation_df, level=self.level, patch_size=self.patch_size, num_patches=self.num_patches, use_mask=False)

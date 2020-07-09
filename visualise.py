@@ -40,8 +40,7 @@ transforms = Compose([Transpose(p=0.5),
                       VerticalFlip(p=0.5),
                       HorizontalFlip(p=0.5),
                       RandomBrightness(p=0.5, limit=0.2),
-                      RandomContrast(p=0.5, limit=0.2),
-                      RandomGamma(p=0.5, gamma_limit=(80, 120))
+                      RandomContrast(p=0.5, limit=0.2)
                       ])
 dataset = PandaDataset(root_path, df, level=1, patch_size=256, num_patches=32, use_mask=True, transforms=transforms)
 dataloader = DataLoader(dataset, batch_size=2, shuffle=False, pin_memory=False, num_workers=16)
