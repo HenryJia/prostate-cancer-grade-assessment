@@ -57,7 +57,7 @@ class EfficientNetV2(LightningModule):
         self.patch_size = patch_size
         self.level = level
 
-        self.save_hyperparameters()
+        self.auto_collect_arguments()
 
         self.enet = enet.EfficientNet.from_name(enet_type)
         self.enet.load_state_dict(torch.load(pretrained_model))
