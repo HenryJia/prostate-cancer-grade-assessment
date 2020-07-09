@@ -33,6 +33,7 @@ class GradualWarmupScheduler(_LRScheduler):
         if self.multiplier == 1.0:
             return [base_lr * (float(self.last_epoch) / self.total_epoch) for base_lr in self.base_lrs]
         else:
+            print('Setting LR', [base_lr * ((self.multiplier - 1.) * self.last_epoch / self.total_epoch + 1.) for base_lr in self.base_lrs])
             return [base_lr * ((self.multiplier - 1.) * self.last_epoch / self.total_epoch + 1.) for base_lr in self.base_lrs]
 
     def step_ReduceLROnPlateau(self, metrics, epoch=None):

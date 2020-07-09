@@ -1,5 +1,6 @@
 import time
 import os
+import subprocess
 from argparse import ArgumentParser
 
 import numpy as np
@@ -18,7 +19,7 @@ from torch.optim import lr_scheduler
 from torch.utils.data import DataLoader, Dataset
 from torch.utils.data.sampler import SubsetRandomSampler, RandomSampler, SequentialSampler
 
-from albumentations import Compose, HorizontalFlip, VerticalFlip, Transpose
+from albumentations import Compose, HorizontalFlip, VerticalFlip, Transpose, HueSaturationValue, RandomBrightness, RandomContrast, RandomGamma
 
 import pytorch_lightning as pl
 from pytorch_lightning.core import LightningModule
@@ -56,6 +57,8 @@ class EfficientNetV2(LightningModule):
         self.patch_size = patch_size
         self.level = level
 
+        self.save_hyperparameters()
+
         self.enet = enet.EfficientNet.from_name(enet_type)
         self.enet.load_state_dict(torch.load(pretrained_model))
 
@@ -91,7 +94,14 @@ class EfficientNetV2(LightningModule):
 
         train_df, validation_df = train_test_split(df, test_size=0.1)
 
-        transforms = Compose([Transpose(p=0.5), VerticalFlip(p=0.5), HorizontalFlip(p=0.5)])
+        transforms = Compose([Transpose(p=0.5),
+                              VerticalFlip(p=0.5),
+                              HorizontalFlip(p=0.5),
+                              HueSaturationValue(p=0.5, hue_shift_limit=20, sat_shift_limit=30, val_shift_limit=20),
+                              RandomBrightness(p=0.5, limit=0.2),
+                              RandomContrast(p=0.5, limit=0.2),
+                              RandomGamma(p=0.5, gamma_limit=(80, 120))
+                              ])
         self.train_set = PandaDataset(root_path, train_df, level=self.level, patch_size=self.patch_size, num_patches=self.num_patches, use_mask=False, transforms=transforms)
         self.validation_set = PandaDataset(root_path, validation_df, level=self.level, patch_size=self.patch_size, num_patches=self.num_patches, use_mask=False)
 
@@ -135,7 +145,7 @@ class EfficientNetV2(LightningModule):
         out = torch.sigmoid(torch.cat([x['out'] for x in outputs], dim=0)).cpu().numpy()
         y = torch.cat([x['y'] for x in outputs], dim=0).cpu().numpy()
 
-        kappa = cohen_kappa_score(np.sum(out, axis=-1).round(), y.sum(axis=-1), weights='quadratic')
+        kappa = torch.tensor(cohen_kappa_score(np.sum(out, axis=-1).round(), y.sum(axis=-1), weights='quadratic'))
 
         logs = {'val_loss': avg_loss, 'kappa': kappa}
         return {'val_loss': avg_loss, 'kappa': kappa, 'log': logs}
@@ -158,8 +168,12 @@ argument_parser.add_argument('--precision', type=int, default=32, help='which gp
 args = argument_parser.parse_args()
 
 logger = TensorBoardLogger("tb_logs", name="efficientnet")
-checkpoint_callback = ModelCheckpoint(filepath='./efficientnet-ckpt/{epoch:02d}-{kappa:.2f}.ckpt', save_top_k=1, verbose=True, monitor='kappa', mode='max', prefix='')
-trainer = pl.Trainer(max_epochs=args.epochs, gpus=[args.gpu], precision=args.precision, logger=logger, checkpoint_callback=checkpoint_callback, use_amp=True if args.precision == 16 else False)
+
+model_name = subprocess.check_output(['git', 'rev-parse', '--short', 'HEAD']).strip().decode('ascii')
+print(model_name)
+
+checkpoint_callback = ModelCheckpoint(filepath='./efficientnet-ckpt/'+model_name+'-{epoch:02d}-{kappa:.2f}.ckpt', save_top_k=1, verbose=True, monitor='kappa', mode='max')
+trainer = pl.Trainer(max_epochs=args.epochs, gpus=[args.gpu], precision=args.precision, logger=logger, checkpoint_callback=checkpoint_callback, amp_level='O1' if args.precision == 16 else None)
 
 model = EfficientNetV2(**vars(args), out_dim=5)
 trainer.fit(model)
