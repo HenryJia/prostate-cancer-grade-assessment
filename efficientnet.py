@@ -70,8 +70,8 @@ class EfficientNetV2(LightningModule):
         # Apply a separate identical enet on every separate patch
         x = x.view(batch_size * num_patches, channels, height, width)
         x = self.enet.extract_features(x)
-        x = x.view(batch_size, num_patches, x.shape[1], -1)
-        x = torch.mean(torch.max(x, dim=1)[0], dim=2)
+        x = x.view(batch_size, num_patches, x.shape[1], -1) # batch_size, num_patches, channels, spatial dimension
+        x = torch.max(torch.mean(x, dim=3), dim=1)[0]
 
         x = self.fc_out(x)
         return x
