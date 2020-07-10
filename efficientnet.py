@@ -63,18 +63,24 @@ class EfficientNetV2(LightningModule):
         self.enet.load_state_dict(torch.load(pretrained_model))
 
         self.fc_out = nn.Linear(self.enet._fc.in_features, out_dim)
+        self.mask_out = nn.Conv2d(self.enet._fc.in_features, 2, 1)
 
-    def forward(self, x):
+    def forward(self, x, mask=False):
         batch_size, num_patches, channels, height, width = x.shape
 
         # Apply a separate identical enet on every separate patch
         x = x.view(batch_size * num_patches, channels, height, width)
-        x = self.enet.extract_features(x)
-        x = x.view(batch_size, num_patches, x.shape[1], -1) # batch_size, num_patches, channels, spatial dimension
+        features = self.enet.extract_features(x)
+
+        x = features.view(batch_size, num_patches, features.shape[1], -1) # batch_size, num_patches, channels, spatial dimension
         x = torch.max(torch.mean(x, dim=3), dim=1)[0]
 
         x = self.fc_out(x)
-        return x
+
+        if mask:
+            return x, self.mask_out(features).view(batch_size, num_patches, 2, features.shape[-2], features.shape[-1])
+        else:
+            return x
 
     def configure_optimizers(self):
         optimizer = optim.Adam(self.parameters(), lr=self.lr/self.warmup_factor)
@@ -100,7 +106,7 @@ class EfficientNetV2(LightningModule):
                               RandomBrightness(p=0.5, limit=0.2),
                               RandomContrast(p=0.5, limit=0.2)
                               ])
-        self.train_set = PandaDataset(root_path, train_df, level=self.level, patch_size=self.patch_size, num_patches=self.num_patches, use_mask=False, transforms=transforms)
+        self.train_set = PandaDataset(root_path, train_df, level=self.level, patch_size=self.patch_size, num_patches=self.num_patches, use_mask=True, transforms=transforms)
         self.validation_set = PandaDataset(root_path, validation_df, level=self.level, patch_size=self.patch_size, num_patches=self.num_patches, use_mask=False)
 
     def train_dataloader(self):
@@ -112,15 +118,20 @@ class EfficientNetV2(LightningModule):
         return AsynchronousLoader(dataloader, device=torch.device('cuda', 0), q_size=self.q_size, dtype=torch.float16 if args.precision == 16 else torch.float32)
 
     def training_step(self, batch, batch_idx):
-        x, y = batch
+        x, (mask, y) = batch
+        batch_size, num_patches, channels, height, width = x.shape
 
         if self.precision == 16:
             x = x.half()
         else:
             x = x.float()
 
-        out = self(x / 255.0)
-        loss = F.binary_cross_entropy_with_logits(out, y)
+        out, out_mask = self(x / 255.0, mask=True)
+
+        mask = F.adaptive_max_pool2d(mask.view(batch_size * num_patches, 2, height, width), out_mask.shape[-2:])
+        mask = mask.view(batch_size, num_patches, 2, mask.shape[-2], mask.shape[-1])
+
+        loss = F.binary_cross_entropy_with_logits(out, y) + F.binary_cross_entropy_with_logits(out_mask, mask)
 
         logs = {'train_loss': loss}
         return {'loss': loss, 'log': logs}
@@ -170,7 +181,7 @@ logger = TensorBoardLogger("tb_logs", name="efficientnet")
 model_name = subprocess.check_output(['git', 'rev-parse', '--short', 'HEAD']).strip().decode('ascii')
 print(model_name)
 
-checkpoint_callback = ModelCheckpoint(filepath='./efficientnet-ckpt/'+model_name+'-{epoch:02d}-{kappa:.2f}.ckpt', save_top_k=1, verbose=True, monitor='kappa', mode='max')
+checkpoint_callback = ModelCheckpoint(filepath='./efficientnet-ckpt/'+model_name+'-{epoch:02d}-{kappa:.2f}', save_top_k=1, verbose=True, monitor='kappa', mode='max')
 trainer = pl.Trainer(max_epochs=args.epochs, gpus=[args.gpu], precision=args.precision, logger=logger, checkpoint_callback=checkpoint_callback, amp_level='O1' if args.precision == 16 else None)
 
 model = EfficientNetV2(**vars(args), out_dim=5)

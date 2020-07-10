@@ -52,6 +52,7 @@ print(t1 - t0)
 x, y = dataset[0]
 t2 = time.time()
 print(t2 - t1)
+print(y[0].shape)
 
 #for x, y, in tqdm(dataloader, total=len(dataloader)):
     #pass
@@ -59,7 +60,7 @@ print(t2 - t1)
 cmap = matplotlib.colors.ListedColormap(['black', 'gray', 'red'])
 for j in range(5):
     t0 = time.time()
-    image, (mask, label) = dataset[0]
+    image, (mask, label) = dataset[j]
     print('Dataloading time', time.time() - t0)
     plt.figure(figsize=(32, 32))
 
@@ -67,4 +68,4 @@ for j in range(5):
         plt.subplot(8, 8, 2 * i + 1)
         plt.imshow(image[i].permute(1, 2, 0).numpy())
         plt.subplot(8, 8, 2 * (i + 1))
-        plt.imshow(mask[i], cmap=cmap, interpolation='nearest', vmin=0, vmax=2)
+        plt.imshow(mask[i].sum(dim=-1), cmap=cmap, interpolation='nearest', vmin=0, vmax=2)

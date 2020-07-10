@@ -88,6 +88,13 @@ class PandaDataset(Dataset):
                     augmented = self.transforms(image=image[i], mask=mask[i])
                     image[i] = augmented['image']
                     mask[i] = augmented['mask']
+
+            # Convert our mask to binned binary just like the labels
+            mask_binary = np.zeros((mask.shape[0], 2, mask.shape[1], mask.shape[2]))
+            for i in range(2):
+                mask_binary[:, i] = (mask > i)
+            mask = mask_binary
+
             return torch.tensor(image).permute(0, 3, 1, 2), (torch.tensor(mask), label)
 
         if self.transforms:
