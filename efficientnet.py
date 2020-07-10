@@ -73,7 +73,8 @@ class EfficientNetV2(LightningModule):
         features = self.enet.extract_features(x)
 
         x = features.view(batch_size, num_patches, features.shape[1], -1) # batch_size, num_patches, channels, spatial dimension
-        x = torch.max(torch.mean(x, dim=3), dim=1)[0]
+        x = torch.mean(x, dim=3)
+        x = torch.sum(F.softmax(x, dim=1) * x, dim=1) # Use a softer version of maxpooling
 
         x = self.fc_out(x)
 
