@@ -24,7 +24,7 @@ from albumentations import Compose, HorizontalFlip, VerticalFlip, Transpose, Hue
 import pytorch_lightning as pl
 from pytorch_lightning.core import LightningModule
 from pytorch_lightning.loggers import TensorBoardLogger
-from pytorch_lightning.callbacks import ModelCheckpoint
+from pytorch_lightning.callbacks import ModelCheckpoint, LearningRateLogger
 
 from dataset import PandaDataset
 from efficientnet_pytorch import model as enet
@@ -57,7 +57,7 @@ class EfficientNetV2(LightningModule):
         self.patch_size = patch_size
         self.level = level
 
-        self.auto_collect_arguments()
+        self.save_hyperparameters()
 
         self.enet = enet.EfficientNet.from_name(enet_type)
         self.enet.load_state_dict(torch.load(pretrained_model))
@@ -178,11 +178,18 @@ args = argument_parser.parse_args()
 
 logger = TensorBoardLogger("tb_logs", name="efficientnet")
 
-model_name = subprocess.check_output(['git', 'rev-parse', '--short', 'HEAD']).strip().decode('ascii')
+model_name = subprocess.check_output(['git', 'rev-parse', '--short', 'HEAD']).strip().decode('ascii') + '-' + args.enet_type
 print(model_name)
 
 checkpoint_callback = ModelCheckpoint(filepath='./efficientnet-ckpt/'+model_name+'-{epoch:02d}-{kappa:.2f}', save_top_k=1, verbose=True, monitor='kappa', mode='max')
-trainer = pl.Trainer(max_epochs=args.epochs, gpus=[args.gpu], precision=args.precision, logger=logger, checkpoint_callback=checkpoint_callback, amp_level='O1' if args.precision == 16 else None)
+lr_logger_callback = LearningRateLogger()
+trainer = pl.Trainer(max_epochs=args.epochs,
+                     gpus=[args.gpu],
+                     precision=args.precision,
+                     logger=logger,
+                     checkpoint_callback=checkpoint_callback,
+                     callbacks=[lr_logger_callback],
+                     amp_level='O1' if args.precision == 16 else None)
 
 model = EfficientNetV2(**vars(args), out_dim=5)
 trainer.fit(model)
