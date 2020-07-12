@@ -72,6 +72,8 @@ class EfficientNetV2(LightningModule):
 
         x = features.view(batch_size, num_patches, features.shape[1], -1) # batch_size, num_patches, channels, spatial dimension
         x = torch.max(torch.mean(x, dim=3), dim=1)[0]
+        if self.enet.dropout:
+            x = F.dropout(x, p=self.enet.dropout, training=self.training)
 
         x = self.fc_out(x)
 
