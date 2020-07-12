@@ -128,10 +128,15 @@ class EfficientNetV2(LightningModule):
         mask = F.adaptive_max_pool2d(mask.view(batch_size * num_patches, 2, height, width), out_mask.shape[-2:])
         mask = mask.view(batch_size, num_patches, 2, mask.shape[-2], mask.shape[-1])
 
-        loss = F.binary_cross_entropy_with_logits(out, y) + F.binary_cross_entropy_with_logits(out_mask, mask)
+        label_loss = F.binary_cross_entropy_with_logits(out, y)
+        mask_loss = F.binary_cross_entropy_with_logits(out_mask, mask)
+        mse_loss = F.mse_loss(torch.sum(F.sigmoid(out), dim=-1), torch.sum(y, dim=-1)) / (y.shape[-1] - 1) ** 2
+
+        loss = label_loss + mask_loss + mse_loss
 
         logs = {'train_loss': loss}
-        return {'loss': loss, 'log': logs}
+        progress_bar = {'label_loss': label_loss, 'mask_loss': mask_loss, 'mse_loss': mse_loss}
+        return {'loss': loss, 'log': logs, 'progress_bar': progress_bar}
 
     def validation_step(self, batch, batch_idx):
         x, y = batch
@@ -154,7 +159,7 @@ class EfficientNetV2(LightningModule):
         kappa = torch.tensor(cohen_kappa_score(np.sum(out, axis=-1).round(), y.sum(axis=-1), weights='quadratic'))
 
         logs = {'val_loss': avg_loss, 'kappa': kappa}
-        return {'val_loss': avg_loss, 'kappa': kappa, 'log': logs}
+        return {'val_loss': avg_loss, 'kappa': kappa, 'log': logs, 'progress_bar': logs}
 
 argument_parser = ArgumentParser(add_help=False)
 argument_parser.add_argument('--enet_type', type=str, default='efficientnet-b0', help='Type of efficientnet to use')
