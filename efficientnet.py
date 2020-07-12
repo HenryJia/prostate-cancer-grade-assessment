@@ -37,7 +37,7 @@ plt.ion()
 from tqdm import tqdm
 
 class EfficientNetV2(LightningModule):
-    def __init__(self, enet_type, pretrained_model, out_dim, precision, epochs, batch_size, num_workers, q_size, lr, warmup_factor, warmup_epo, num_patches, patch_size, level, **kwargs):
+    def __init__(self, enet_type, pretrained_model, out_dim, precision, epochs, batch_size, num_workers, q_size, lr, num_patches, patch_size, level, **kwargs):
         super(EfficientNetV2, self).__init__()
         self.enet_type = enet_type
         self.pretrained_model = pretrained_model
@@ -50,8 +50,6 @@ class EfficientNetV2(LightningModule):
         self.q_size = q_size
 
         self.lr = lr
-        self.warmup_factor = warmup_factor
-        self.warmup_epo = warmup_epo
 
         self.num_patches = num_patches
         self.patch_size = patch_size
@@ -83,9 +81,8 @@ class EfficientNetV2(LightningModule):
             return x
 
     def configure_optimizers(self):
-        optimizer = optim.Adam(self.parameters(), lr=self.lr/self.warmup_factor)
-        scheduler_cosine = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, self.epochs - self.warmup_epo)
-        scheduler = GradualWarmupScheduler(optimizer, multiplier=self.warmup_factor, total_epoch=self.warmup_epo, after_scheduler=scheduler_cosine)
+        optimizer = optim.Adam(self.parameters(), lr=self.lr)
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, self.epochs)
         return [optimizer], [scheduler]
 
     def prepare_data(self):
@@ -167,8 +164,6 @@ argument_parser.add_argument('--batch_size', type=int, default=2, help='training
 argument_parser.add_argument('--num_workers', type=int, default=16, help='number of workers for dataloaders')
 argument_parser.add_argument('--q_size', type=int, default=5, help='queue size for asynchronous loading')
 argument_parser.add_argument('--lr', type=float, default=3e-4, help='learning rate')
-argument_parser.add_argument('--warmup_factor', type=float, default=10, help='learning rate warmup factor')
-argument_parser.add_argument('--warmup_epo', type=float, default=3e-4, help='learning rate warmup episodes')
 argument_parser.add_argument('--num_patches', type=int, default=20, help='number of patches to take')
 argument_parser.add_argument('--patch_size', type=int, default=256, help='size of patches')
 argument_parser.add_argument('--level', type=int, default=1, help='resolution level of images')
