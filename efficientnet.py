@@ -61,7 +61,7 @@ class EfficientNetV2(LightningModule):
         self.enet.load_state_dict(torch.load(pretrained_model))
 
         self.fc_out = nn.Linear(self.enet._fc.in_features, out_dim)
-        self.mask_out = nn.Conv2d(self.enet._fc.in_features, 2, 1)
+        self.mask_out = nn.Conv2d(self.enet._fc.in_features, 6, 1)
 
     def forward(self, x, mask=False):
         batch_size, num_patches, channels, height, width = x.shape
@@ -78,7 +78,7 @@ class EfficientNetV2(LightningModule):
         x = self.fc_out(x)
 
         if mask:
-            return x, self.mask_out(features).view(batch_size, num_patches, 2, features.shape[-2], features.shape[-1])
+            return x, self.mask_out(features).view(batch_size, num_patches, 6, features.shape[-2], features.shape[-1])
         else:
             return x
 
@@ -127,8 +127,8 @@ class EfficientNetV2(LightningModule):
 
         out, out_mask = self(x / 255.0, mask=True)
 
-        mask = F.adaptive_max_pool2d(mask.view(batch_size * num_patches, 2, height, width), out_mask.shape[-2:])
-        mask = mask.view(batch_size, num_patches, 2, mask.shape[-2], mask.shape[-1])
+        mask = F.adaptive_max_pool2d(mask.view(batch_size * num_patches, 6, height, width), out_mask.shape[-2:])
+        mask = mask.view(batch_size, num_patches, 6, mask.shape[-2], mask.shape[-1])
 
         label_loss = F.binary_cross_entropy_with_logits(out, y)
         mask_loss = F.binary_cross_entropy_with_logits(out_mask, mask)

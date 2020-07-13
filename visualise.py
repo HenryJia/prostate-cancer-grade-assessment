@@ -57,7 +57,7 @@ print(y[0].shape)
 #for x, y, in tqdm(dataloader, total=len(dataloader)):
     #pass
 
-cmap = matplotlib.colors.ListedColormap(['black', 'gray', 'red'])
+cmap = matplotlib.colors.ListedColormap(['black', 'gray', 'blue', 'green', 'yellow', 'red'])
 for j in range(5):
     t0 = time.time()
     image, (mask, label) = dataset[j]
@@ -68,4 +68,4 @@ for j in range(5):
         plt.subplot(8, 8, 2 * i + 1)
         plt.imshow(image[i].permute(1, 2, 0).numpy())
         plt.subplot(8, 8, 2 * (i + 1))
-        plt.imshow(mask[i].sum(dim=-1), cmap=cmap, interpolation='nearest', vmin=0, vmax=2)
+        plt.imshow(mask[i].sum(dim=0), cmap=cmap, interpolation='nearest', vmin=0, vmax=5)

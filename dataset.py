@@ -79,9 +79,9 @@ class PandaDataset(Dataset):
                     mask = np.pad(mask, ((0, self.num_patches - mask.shape[0]), (0, 0), (0, 0)))
                 mask = mask[selected_patches]
 
-                if self.df['data_provider'].iloc[idx] == 'radboud': # Different data providers have different mask formats, normalise them to be the same
-                    mask[mask == 2] = 1
-                    mask[mask > 2] = 2
+                if self.df['data_provider'].iloc[idx] == 'karolinska': # Different data providers have different mask formats, normalise them to be the same
+                    mask[mask == 2] = 3
+                    mask[mask == 1] = 2
 
             if self.transforms:
                 for i in range(self.num_patches): # We need to iterate and apply to each image separately
@@ -90,9 +90,9 @@ class PandaDataset(Dataset):
                     mask[i] = augmented['mask']
 
             # Convert our mask to binned binary just like the labels
-            mask_binary = np.zeros((mask.shape[0], 2, mask.shape[1], mask.shape[2]))
-            for i in range(2):
-                mask_binary[:, i] = (mask > i)
+            mask_binary = np.zeros((mask.shape[0], 6, mask.shape[1], mask.shape[2]))
+            for i in range(6):
+                mask_binary[:, i] = (i < mask)
             mask = mask_binary
 
             return torch.tensor(image).permute(0, 3, 1, 2), (torch.tensor(mask), label)
