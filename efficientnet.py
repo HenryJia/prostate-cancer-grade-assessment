@@ -60,7 +60,10 @@ class EfficientNetV2(LightningModule):
         self.enet = enet.EfficientNet.from_name(enet_type)
         self.enet.load_state_dict(torch.load(pretrained_model))
 
+        self.fc_router = nn.Linear(self.num_patches, self.num_patches)
+
         self.fc_out = nn.Linear(self.enet._fc.in_features, out_dim)
+
         self.mask_out = nn.Conv2d(self.enet._fc.in_features, 6, 1)
 
     def forward(self, x, mask=False):
@@ -71,7 +74,11 @@ class EfficientNetV2(LightningModule):
         features = self.enet.extract_features(x)
 
         x = features.view(batch_size, num_patches, features.shape[1], -1) # batch_size, num_patches, channels, spatial dimension
-        x = torch.max(torch.mean(x, dim=3), dim=1)[0]
+        x = torch.mean(x, dim=3)
+
+        router = F.softmax(self.fc_router(x[..., 0]))
+        x = torch.sum(router[..., None] * x, dim=1)
+
         if self.enet.dropout:
             x = F.dropout(x, p=self.enet.dropout, training=self.training)
 
