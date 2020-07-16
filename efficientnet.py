@@ -60,7 +60,7 @@ class EfficientNetV2(LightningModule):
         self.enet = enet.EfficientNet.from_name(enet_type)
         self.enet.load_state_dict(torch.load(pretrained_model))
 
-        self.local_attention = nn.Linear(self.enet._fc.in_features, 1)
+        #self.local_attention = nn.Linear(self.enet._fc.in_features, 1)
         #self.global_attention = nn.Linear(self.num_patches, self.num_patches)
 
         self.fc_out = nn.Linear(self.enet._fc.in_features, out_dim)
@@ -80,8 +80,9 @@ class EfficientNetV2(LightningModule):
         if self.enet.dropout:
             x = F.dropout(x, p=self.enet.dropout, training=self.training)
 
-        attn = F.softmax(self.local_attention(x).squeeze())
-        x = torch.sum(attn[..., None] * x, dim=1)
+        #attn = F.softmax(self.local_attention(x).squeeze())
+        #x = torch.sum(attn[..., None] * x, dim=1)
+        x = torch.max(x, dim=1)[0]
 
         x = self.fc_out(x)
 
@@ -109,12 +110,10 @@ class EfficientNetV2(LightningModule):
 
         transforms = Compose([Transpose(p=0.5),
                               VerticalFlip(p=0.5),
-                              HorizontalFlip(p=0.5),
-                              RandomBrightness(p=0.5, limit=0.2),
-                              RandomContrast(p=0.5, limit=0.2)
+                              HorizontalFlip(p=0.5)
                               ])
         self.train_set = PandaDataset(root_path, train_df, level=self.level, patch_size=self.patch_size, num_patches=self.num_patches, use_mask=True, transforms=transforms)
-        self.validation_set = PandaDataset(root_path, validation_df, level=self.level, patch_size=self.patch_size, num_patches=self.num_patches, use_mask=False)
+        self.validation_set = PandaDataset(root_path, validation_df, level=self.level, patch_size=self.patch_size, num_patches=self.num_patches, use_mask=True)
 
     def train_dataloader(self):
         dataloader = DataLoader(self.train_set, batch_size=self.batch_size, shuffle=True, pin_memory=False, num_workers=self.num_workers)
@@ -140,7 +139,7 @@ class EfficientNetV2(LightningModule):
 
         label_loss = F.binary_cross_entropy_with_logits(out, y)
         mask_loss = F.binary_cross_entropy_with_logits(out_mask, mask)
-        mse_loss = F.mse_loss(torch.sum(F.sigmoid(out), dim=-1), torch.sum(y, dim=-1)) / (y.shape[-1] - 1) ** 2
+        mse_loss = F.mse_loss(torch.sum(torch.sigmoid(out), dim=-1), torch.sum(y, dim=-1)) / (y.shape[-1] - 1) ** 2
 
         loss = label_loss + mask_loss + mse_loss
 
@@ -149,26 +148,42 @@ class EfficientNetV2(LightningModule):
         return {'loss': loss, 'log': logs, 'progress_bar': progress_bar}
 
     def validation_step(self, batch, batch_idx):
-        x, y = batch
+        x, (mask, y) = batch
+        batch_size, num_patches, channels, height, width = x.shape
 
         if self.precision == 16:
             x = x.half()
         else:
             x = x.float()
 
-        out = self(x / 255.0)
+        out, out_mask = self(x / 255.0, mask=True)
         loss = F.binary_cross_entropy_with_logits(out, y)
 
-        return {'val_loss': loss, 'out': out.detach(), 'y': y}
+        mask = F.adaptive_max_pool2d(mask.view(batch_size * num_patches, 6, height, width), out_mask.shape[-2:])
+        mask = mask.view(batch_size, num_patches, 6, mask.shape[-2], mask.shape[-1])
+
+        mask_loss = F.binary_cross_entropy_with_logits(out_mask, mask)
+
+        return {'val_loss': loss, 'mask_loss': mask_loss, 'out': out.detach(), 'out_mask': out_mask.detach(), 'y': y, 'mask': mask}
 
     def validation_epoch_end(self, outputs):
         avg_loss = torch.stack([x['val_loss'] for x in outputs], dim=0).mean()
+        mask_loss = torch.stack([x['mask_loss'] for x in outputs], dim=0).mean()
+
         out = torch.sigmoid(torch.cat([x['out'] for x in outputs], dim=0)).cpu().numpy()
         y = torch.cat([x['y'] for x in outputs], dim=0).cpu().numpy()
 
-        kappa = torch.tensor(cohen_kappa_score(np.sum(out, axis=-1).round(), y.sum(axis=-1), weights='quadratic'))
+        out_mask = torch.sigmoid(torch.cat([x['out_mask'] for x in outputs], dim=0)).cpu().numpy()
+        mask = torch.cat([x['mask'] for x in outputs], dim=0)
 
-        logs = {'val_loss': avg_loss, 'kappa': kappa}
+        mask = F.adaptive_max_pool2d(mask.view(mask.shape[0] * mask.shape[1], 6, mask.shape[-2], mask.shape[-1]), out_mask.shape[-2:])
+        mask = mask.view(-1, self.num_patches, 6, mask.shape[-2], mask.shape[-1]).cpu().numpy()
+
+        kappa = torch.tensor(cohen_kappa_score(np.sum(out, axis=-1).round(), y.sum(axis=-1), weights='quadratic'))
+        mask_kappa = torch.tensor(cohen_kappa_score(np.sum(out_mask, axis=2).round().flatten(), mask.sum(axis=2).flatten(), weights='quadratic'))
+
+        logs = {'val_loss': avg_loss, 'kappa': kappa, 'mask_kappa': mask_kappa}
+        progbar = logs.update({'mask_loss': mask_loss})
         return {'val_loss': avg_loss, 'kappa': kappa, 'log': logs, 'progress_bar': logs}
 
 argument_parser = ArgumentParser(add_help=False)
