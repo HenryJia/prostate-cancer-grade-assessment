@@ -60,7 +60,8 @@ class EfficientNetV2(LightningModule):
         self.enet = enet.EfficientNet.from_name(enet_type)
         self.enet.load_state_dict(torch.load(pretrained_model))
 
-        self.fc_router = nn.Linear(self.num_patches, self.num_patches)
+        self.local_attention = nn.Linear(self.enet._fc.in_features, 1)
+        self.global_attention = nn.Linear(self.num_patches, self.num_patches)
 
         self.fc_out = nn.Linear(self.enet._fc.in_features, out_dim)
 
@@ -76,11 +77,11 @@ class EfficientNetV2(LightningModule):
         x = features.view(batch_size, num_patches, features.shape[1], -1) # batch_size, num_patches, channels, spatial dimension
         x = torch.mean(x, dim=3)
 
-        router = F.softmax(self.fc_router(x[..., 0]))
-        x = torch.sum(router[..., None] * x, dim=1)
-
         if self.enet.dropout:
             x = F.dropout(x, p=self.enet.dropout, training=self.training)
+
+        attn = F.softmax(self.local_attention(x).squeeze() + self.global_attention(x[..., 0]))
+        x = torch.sum(attn[..., None] * x, dim=1)
 
         x = self.fc_out(x)
 
