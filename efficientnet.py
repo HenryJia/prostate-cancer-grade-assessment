@@ -61,7 +61,7 @@ class EfficientNetV2(LightningModule):
         self.enet.load_state_dict(torch.load(pretrained_model))
 
         self.local_attention = nn.Linear(self.enet._fc.in_features, 1)
-        self.global_attention = nn.Linear(self.num_patches, self.num_patches)
+        #self.global_attention = nn.Linear(self.num_patches, self.num_patches)
 
         self.fc_out = nn.Linear(self.enet._fc.in_features, out_dim)
 
@@ -80,7 +80,7 @@ class EfficientNetV2(LightningModule):
         if self.enet.dropout:
             x = F.dropout(x, p=self.enet.dropout, training=self.training)
 
-        attn = F.softmax(self.local_attention(x).squeeze() + self.global_attention(x[..., 0]))
+        attn = F.softmax(self.local_attention(x).squeeze())
         x = torch.sum(attn[..., None] * x, dim=1)
 
         x = self.fc_out(x)
