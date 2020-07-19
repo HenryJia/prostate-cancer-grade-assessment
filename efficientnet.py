@@ -60,34 +60,31 @@ class EfficientNetV2(LightningModule):
         self.enet = enet.EfficientNet.from_name(enet_type)
         self.enet.load_state_dict(torch.load(pretrained_model))
 
+        self.transformer = nn.Sequential(nn.Linear(self.enet._fc.in_features, 512),
+                                         nn.TransformerEncoder(nn.TransformerEncoderLayer(d_model=512, dim_feedforward=2048, nhead=2), num_layers=6))
+
         #self.local_attention = nn.Linear(self.enet._fc.in_features, 1)
         #self.global_attention = nn.Linear(self.num_patches, self.num_patches)
 
-        self.fc_out = nn.Linear(self.enet._fc.in_features, out_dim)
+        self.fc_out = nn.Linear(512, out_dim)
 
         self.mask_out = nn.Conv2d(self.enet._fc.in_features, 6, 1)
 
     def forward(self, x, mask=False):
-        batch_size, num_patches, channels, height, width = x.shape
+        batch_size, channels, height, width = x.shape
 
         # Apply a separate identical enet on every separate patch
-        x = x.view(batch_size * num_patches, channels, height, width)
         features = self.enet.extract_features(x)
 
-        x = features.view(batch_size, num_patches, features.shape[1], -1) # batch_size, num_patches, channels, spatial dimension
-        x = torch.mean(x, dim=3)
+        x_mask = self.mask_out(features)
 
-        if self.enet.dropout:
-            x = F.dropout(x, p=self.enet.dropout, training=self.training)
-
-        #attn = F.softmax(self.local_attention(x).squeeze())
-        #x = torch.sum(attn[..., None] * x, dim=1)
-        x = torch.max(x, dim=1)[0]
-
+        x = features.view(batch_size, self.enet._fc.in_features, -1) # batch_size, num_patches, channels, spatial dimension
+        x = x.permute(0, 2, 1).contiguous()
+        x = self.transformer(x).mean(dim=1)
         x = self.fc_out(x)
 
         if mask:
-            return x, self.mask_out(features).view(batch_size, num_patches, 6, features.shape[-2], features.shape[-1])
+            return x, x_mask
         else:
             return x
 
@@ -125,7 +122,7 @@ class EfficientNetV2(LightningModule):
 
     def training_step(self, batch, batch_idx):
         x, (mask, y) = batch
-        batch_size, num_patches, channels, height, width = x.shape
+        batch_size, channels, height, width = x.shape
 
         if self.precision == 16:
             x = x.half()
@@ -134,8 +131,7 @@ class EfficientNetV2(LightningModule):
 
         out, out_mask = self(x / 255.0, mask=True)
 
-        mask = F.adaptive_max_pool2d(mask.view(batch_size * num_patches, 6, height, width), out_mask.shape[-2:])
-        mask = mask.view(batch_size, num_patches, 6, mask.shape[-2], mask.shape[-1])
+        mask = F.adaptive_max_pool2d(mask, out_mask.shape[-2:])
 
         label_loss = F.binary_cross_entropy_with_logits(out, y)
         mask_loss = F.binary_cross_entropy_with_logits(out_mask, mask)
@@ -149,7 +145,7 @@ class EfficientNetV2(LightningModule):
 
     def validation_step(self, batch, batch_idx):
         x, (mask, y) = batch
-        batch_size, num_patches, channels, height, width = x.shape
+        batch_size, channels, height, width = x.shape
 
         if self.precision == 16:
             x = x.half()
@@ -159,8 +155,7 @@ class EfficientNetV2(LightningModule):
         out, out_mask = self(x / 255.0, mask=True)
         loss = F.binary_cross_entropy_with_logits(out, y)
 
-        mask = F.adaptive_max_pool2d(mask.view(batch_size * num_patches, 6, height, width), out_mask.shape[-2:])
-        mask = mask.view(batch_size, num_patches, 6, mask.shape[-2], mask.shape[-1])
+        mask = F.adaptive_max_pool2d(mask, out_mask.shape[-2:])
 
         mask_loss = F.binary_cross_entropy_with_logits(out_mask, mask)
 
@@ -176,11 +171,10 @@ class EfficientNetV2(LightningModule):
         out_mask = torch.sigmoid(torch.cat([x['out_mask'] for x in outputs], dim=0)).cpu().numpy()
         mask = torch.cat([x['mask'] for x in outputs], dim=0)
 
-        mask = F.adaptive_max_pool2d(mask.view(mask.shape[0] * mask.shape[1], 6, mask.shape[-2], mask.shape[-1]), out_mask.shape[-2:])
-        mask = mask.view(-1, self.num_patches, 6, mask.shape[-2], mask.shape[-1]).cpu().numpy()
+        mask = F.adaptive_max_pool2d(mask, out_mask.shape[-2:]).cpu().numpy()
 
         kappa = torch.tensor(cohen_kappa_score(np.sum(out, axis=-1).round(), y.sum(axis=-1), weights='quadratic'))
-        mask_kappa = torch.tensor(cohen_kappa_score(np.sum(out_mask, axis=2).round().flatten(), mask.sum(axis=2).flatten(), weights='quadratic'))
+        mask_kappa = torch.tensor(cohen_kappa_score(np.sum(out_mask, axis=1).round().flatten(), mask.sum(axis=1).flatten(), weights='quadratic'))
 
         logs = {'val_loss': avg_loss, 'kappa': kappa, 'mask_kappa': mask_kappa}
         progbar = logs.update({'mask_loss': mask_loss})

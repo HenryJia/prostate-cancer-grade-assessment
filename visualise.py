@@ -42,7 +42,7 @@ transforms = Compose([Transpose(p=0.5),
                       RandomBrightness(p=0.5, limit=0.2),
                       RandomContrast(p=0.5, limit=0.2)
                       ])
-dataset = PandaDataset(root_path, df, level=1, patch_size=256, num_patches=32, use_mask=True, transforms=transforms)
+dataset = PandaDataset(root_path, df, level=2, patch_size=128, num_patches=16, use_mask=True, transforms=transforms)
 dataloader = DataLoader(dataset, batch_size=2, shuffle=False, pin_memory=False, num_workers=16)
 
 t0 = time.time()
@@ -63,9 +63,7 @@ for j in range(5):
     image, (mask, label) = dataset[j]
     print('Dataloading time', time.time() - t0)
     plt.figure(figsize=(32, 32))
-
-    for i in range(32):
-        plt.subplot(8, 8, 2 * i + 1)
-        plt.imshow(image[i].permute(1, 2, 0).numpy())
-        plt.subplot(8, 8, 2 * (i + 1))
-        plt.imshow(mask[i].sum(dim=0), cmap=cmap, interpolation='nearest', vmin=0, vmax=5)
+    plt.subplot(1, 2, 1)
+    plt.imshow(image.permute(1, 2, 0).numpy())
+    plt.subplot(1, 2, 2)
+    plt.imshow(mask.max(dim=0)[1], cmap=cmap, interpolation='nearest', vmin=0, vmax=5)

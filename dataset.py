@@ -90,17 +90,25 @@ class PandaDataset(Dataset):
                     mask[i] = augmented['mask']
 
             # Convert our mask to binned binary just like the labels
-            mask_binary = np.zeros((mask.shape[0], 6, mask.shape[1], mask.shape[2]))
+            mask_binary = np.zeros((mask.shape[0], mask.shape[1], mask.shape[2], 6))
             for i in range(6):
-                mask_binary[:, i] = (i < mask)
+                mask_binary[..., i] = (i == mask)
             mask = mask_binary
 
-            return torch.tensor(image).permute(0, 3, 1, 2), (torch.tensor(mask), label)
+            n = int(np.sqrt(self.num_patches))
+            image = image.reshape(n, n, self.patch_size, self.patch_size, 3).transpose((0, 2, 1, 3, 4)).reshape(n * self.patch_size, n * self.patch_size, 3)
+            mask = mask.reshape(n, n, self.patch_size, self.patch_size, 6).transpose((0, 2, 1, 3, 4)).reshape(n * self.patch_size, n * self.patch_size, 6)
+
+            return torch.tensor(image).permute(2, 0, 1), (torch.tensor(mask).permute(2, 0, 1), label)
 
         if self.transforms:
             for i in range(self.num_patches): # We need to iterate and apply to each image separately
                 image[i] = self.transforms(image=image[i])['image']
-        return torch.tensor(image).permute(0, 3, 1, 2), label
+
+        n = int(np.sqrt(self.num_patches))
+        image = image.reshape(n, n, self.patch_size, self.patch_size, 3).transpose((0, 2, 1, 3, 4)).reshape(n * self.patch_size, n * self.patch_size, 6)
+
+        return torch.tensor(image).permute(2, 0, 1), label
 
 
 
