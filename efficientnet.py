@@ -1,6 +1,7 @@
 import time
 import os
 import subprocess
+import math
 from argparse import ArgumentParser
 
 import numpy as np
@@ -19,7 +20,7 @@ from torch.optim import lr_scheduler
 from torch.utils.data import DataLoader, Dataset
 from torch.utils.data.sampler import SubsetRandomSampler, RandomSampler, SequentialSampler
 
-from albumentations import Compose, HorizontalFlip, VerticalFlip, Transpose, HueSaturationValue, RandomBrightness, RandomContrast, RandomGamma
+from albumentations import Compose, HorizontalFlip, VerticalFlip, Transpose, HueSaturationValue, RandomBrightness, RandomContrast, RandomGamma, ShiftScaleRotate
 
 import pytorch_lightning as pl
 from pytorch_lightning.core import LightningModule
@@ -60,13 +61,14 @@ class EfficientNetV2(LightningModule):
         self.enet = enet.EfficientNet.from_name(enet_type)
         self.enet.load_state_dict(torch.load(pretrained_model))
 
-        self.transformer = nn.Sequential(nn.Linear(self.enet._fc.in_features, 512),
-                                         nn.TransformerEncoder(nn.TransformerEncoderLayer(d_model=512, dim_feedforward=2048, nhead=2), num_layers=6))
+        #self.transformer = nn.Sequential(nn.Linear(self.enet._fc.in_features, 512),
+                                         #nn.TransformerEncoder(nn.TransformerEncoderLayer(d_model=512, dim_feedforward=2048, nhead=2), num_layers=6))
 
         #self.local_attention = nn.Linear(self.enet._fc.in_features, 1)
         #self.global_attention = nn.Linear(self.num_patches, self.num_patches)
 
-        self.fc_out = nn.Linear(512, out_dim)
+        #self.fc_out = nn.Linear(512, out_dim)
+        self.fc_out = nn.Linear(self.enet._fc.in_features, out_dim)
 
         self.mask_out = nn.Conv2d(self.enet._fc.in_features, 6, 1)
 
@@ -74,14 +76,15 @@ class EfficientNetV2(LightningModule):
         batch_size, channels, height, width = x.shape
 
         # Apply a separate identical enet on every separate patch
-        features = self.enet.extract_features(x)
+        x = self.enet.extract_features(x)
 
-        x_mask = self.mask_out(features)
+        x_mask = self.mask_out(x)
 
-        x = features.view(batch_size, self.enet._fc.in_features, -1) # batch_size, num_patches, channels, spatial dimension
-        x = x.permute(0, 2, 1).contiguous()
-        x = self.transformer(x).mean(dim=1)
-        x = self.fc_out(x)
+        #x = F.adaptive_avg_pool2d(x, (int(math.sqrt(self.num_patches)), int(math.sqrt(self.num_patches))))
+        x = x.view(batch_size, self.enet._fc.in_features, -1) # batch_size, num_patches, channels, spatial dimension
+        #x = x.permute(0, 2, 1).contiguous()
+        #x = self.transformer(x).mean(dim=1)
+        x = self.fc_out(x.mean(dim=2))
 
         if mask:
             return x, x_mask
@@ -107,7 +110,8 @@ class EfficientNetV2(LightningModule):
 
         transforms = Compose([Transpose(p=0.5),
                               VerticalFlip(p=0.5),
-                              HorizontalFlip(p=0.5)
+                              HorizontalFlip(p=0.5),
+                              ShiftScaleRotate(p=0.5)
                               ])
         self.train_set = PandaDataset(root_path, train_df, level=self.level, patch_size=self.patch_size, num_patches=self.num_patches, use_mask=True, transforms=transforms)
         self.validation_set = PandaDataset(root_path, validation_df, level=self.level, patch_size=self.patch_size, num_patches=self.num_patches, use_mask=True)
