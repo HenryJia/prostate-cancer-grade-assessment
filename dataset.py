@@ -40,8 +40,10 @@ class PandaDataset(Dataset):
 
         # Only look at regions of the image that aren't empty space and put a bounding box on it
         # Find those regions using a subsampled image, since NumPy is slow
-        proportion_blank = np.mean((image - 255) ** 2, axis=-1)
-        proportion_blank = block_reduce(proportion_blank, block_size=(self.patch_size, self.patch_size), func=np.mean)
+        stride = self.patch_size // 2
+        proportion_blank = np.mean((image[::stride, ::stride] - 255) ** 2, axis=-1) * np.var(image[::stride, ::stride], axis=-1)
+        proportion_blank = block_reduce(proportion_blank, block_size=(self.patch_size // stride, self.patch_size // stride), func=np.mean)
+
 
         regions = np.argsort(proportion_blank, axis=None)[::-1]
         x = regions % proportion_blank.shape[1] * self.patch_size

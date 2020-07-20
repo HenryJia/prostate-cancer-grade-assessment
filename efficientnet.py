@@ -86,7 +86,7 @@ class EfficientNetV2(LightningModule):
         x = F.dropout(x, p=self.enet.dropout, training=self.training)
         #x = x.permute(0, 2, 1).contiguous()
         #x = self.transformer(x).mean(dim=1)
-        x = self.fc_out()
+        x = self.fc_out(x)
 
         if mask:
             return x, x_mask

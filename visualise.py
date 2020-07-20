@@ -39,10 +39,10 @@ df = df[mask_present]
 transforms = Compose([Transpose(p=0.5),
                       VerticalFlip(p=0.5),
                       HorizontalFlip(p=0.5),
-                      ShiftScaleRotate(p=0.5)
+                      #ShiftScaleRotate(p=0.5)
                       ])
-dataset = PandaDataset(root_path, df, level=2, patch_size=128, num_patches=16, use_mask=True, transforms=transforms)
-dataloader = DataLoader(dataset, batch_size=2, shuffle=False, pin_memory=False, num_workers=16)
+dataset = PandaDataset(root_path, df, level=1, patch_size=256, num_patches=25, use_mask=True, transforms=transforms)
+dataloader = DataLoader(dataset, batch_size=1, shuffle=False, pin_memory=False, num_workers=16)
 
 t0 = time.time()
 x, y = dataset[2209]
