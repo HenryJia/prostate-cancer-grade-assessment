@@ -82,9 +82,11 @@ class EfficientNetV2(LightningModule):
 
         #x = F.adaptive_avg_pool2d(x, (int(math.sqrt(self.num_patches)), int(math.sqrt(self.num_patches))))
         x = x.view(batch_size, self.enet._fc.in_features, -1) # batch_size, num_patches, channels, spatial dimension
+        x = x.mean(dim=2)
+        x = F.dropout(x, p=self.enet.dropout, training=self.training)
         #x = x.permute(0, 2, 1).contiguous()
         #x = self.transformer(x).mean(dim=1)
-        x = self.fc_out(x.mean(dim=2))
+        x = self.fc_out()
 
         if mask:
             return x, x_mask

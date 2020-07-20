@@ -23,7 +23,7 @@ import PIL
 from torch.utils.data import DataLoader
 from dataset import PandaDataset
 
-from albumentations import Compose, HorizontalFlip, VerticalFlip, Transpose, HueSaturationValue, RandomBrightness, RandomContrast, RandomGamma
+from albumentations import Compose, HorizontalFlip, VerticalFlip, Transpose, HueSaturationValue, RandomBrightness, RandomContrast, RandomGamma, ShiftScaleRotate
 
 from tqdm import tqdm
 
@@ -39,8 +39,7 @@ df = df[mask_present]
 transforms = Compose([Transpose(p=0.5),
                       VerticalFlip(p=0.5),
                       HorizontalFlip(p=0.5),
-                      RandomBrightness(p=0.5, limit=0.2),
-                      RandomContrast(p=0.5, limit=0.2)
+                      ShiftScaleRotate(p=0.5)
                       ])
 dataset = PandaDataset(root_path, df, level=2, patch_size=128, num_patches=16, use_mask=True, transforms=transforms)
 dataloader = DataLoader(dataset, batch_size=2, shuffle=False, pin_memory=False, num_workers=16)
