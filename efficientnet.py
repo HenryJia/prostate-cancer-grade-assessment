@@ -141,12 +141,12 @@ class EfficientNetV2(LightningModule):
 
         label_loss = F.binary_cross_entropy_with_logits(out, y)
         mask_loss = F.binary_cross_entropy_with_logits(out_mask, mask)
-        mse_loss = F.mse_loss(torch.sum(torch.sigmoid(out), dim=-1), torch.sum(y, dim=-1)) / (y.shape[-1] - 1) ** 2
+        #mse_loss = F.mse_loss(torch.sum(torch.sigmoid(out), dim=-1), torch.sum(y, dim=-1)) / (y.shape[-1] - 1) ** 2
 
-        loss = label_loss + mask_loss + mse_loss
+        loss = label_loss + mask_loss# + mse_loss
 
         logs = {'train_loss': loss}
-        progress_bar = {'label_loss': label_loss, 'mask_loss': mask_loss, 'mse_loss': mse_loss}
+        progress_bar = {'label_loss': label_loss, 'mask_loss': mask_loss}#, 'mse_loss': mse_loss}
         return {'loss': loss, 'log': logs, 'progress_bar': progress_bar}
 
     def validation_step(self, batch, batch_idx):

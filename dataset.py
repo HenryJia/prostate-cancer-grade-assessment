@@ -40,9 +40,9 @@ class PandaDataset(Dataset):
 
         # Only look at regions of the image that aren't empty space and put a bounding box on it
         # Find those regions using a subsampled image, since NumPy is slow
-        stride = self.patch_size // 2
-        proportion_blank = np.mean((image[::stride, ::stride] - 255) ** 2, axis=-1) * np.var(image[::stride, ::stride], axis=-1)
-        proportion_blank = block_reduce(proportion_blank, block_size=(self.patch_size // stride, self.patch_size // stride), func=np.mean)
+        stride = self.patch_size // 8
+        f_blank = lambda x, axis: np.mean((x - 255) ** 2, axis=axis) * np.var(x, axis=axis)
+        proportion_blank = block_reduce(image[::stride, ::stride], block_size=(self.patch_size // stride, self.patch_size // stride, 3), func=f_blank)
 
 
         regions = np.argsort(proportion_blank, axis=None)[::-1]
@@ -80,25 +80,25 @@ class PandaDataset(Dataset):
                     mask[i] = augmented['mask']
 
             # Convert our mask to binned binary just like the labels
-            mask_binary = np.zeros((mask.shape[0], mask.shape[1], mask.shape[2], 6))
+            mask_binary = np.zeros((mask.shape[0], 6, mask.shape[1], mask.shape[2]))
             for i in range(6):
-                mask_binary[..., i] = (i == mask)
+                mask_binary[:, i] = (i == mask)
             mask = mask_binary
 
-            n = int(np.sqrt(self.num_patches))
-            image = image.reshape(n, n, self.patch_size, self.patch_size, 3).transpose((0, 2, 1, 3, 4)).reshape(n * self.patch_size, n * self.patch_size, 3)
-            mask = mask.reshape(n, n, self.patch_size, self.patch_size, 6).transpose((0, 2, 1, 3, 4)).reshape(n * self.patch_size, n * self.patch_size, 6)
+            #n = int(np.sqrt(self.num_patches))
+            #image = image.reshape(n, n, self.patch_size, self.patch_size, 3).transpose((0, 2, 1, 3, 4)).reshape(n * self.patch_size, n * self.patch_size, 3)
+            #mask = mask.reshape(n, n, self.patch_size, self.patch_size, 6).transpose((0, 2, 1, 3, 4)).reshape(n * self.patch_size, n * self.patch_size, 6)
 
-            return torch.tensor(image).permute(2, 0, 1), (torch.tensor(mask).permute(2, 0, 1), label)
+            return torch.tensor(image).permute(0, 3, 1, 2), (torch.tensor(mask), label)
 
         if self.transforms:
             for i in range(self.num_patches): # We need to iterate and apply to each image separately
                 image[i] = self.transforms(image=image[i])['image']
 
-        n = int(np.sqrt(self.num_patches))
-        image = image.reshape(n, n, self.patch_size, self.patch_size, 3).transpose((0, 2, 1, 3, 4)).reshape(n * self.patch_size, n * self.patch_size, 6)
+        #n = int(np.sqrt(self.num_patches))
+        #image = image.reshape(n, n, self.patch_size, self.patch_size, 3).transpose((0, 2, 1, 3, 4)).reshape(n * self.patch_size, n * self.patch_size, 6)
 
-        return torch.tensor(image).permute(2, 0, 1), label
+        return torch.tensor(image).permute(0, 3, 1, 2), label
 
 
 

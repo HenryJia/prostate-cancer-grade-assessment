@@ -62,7 +62,8 @@ for j in range(5):
     image, (mask, label) = dataset[j]
     print('Dataloading time', time.time() - t0)
     plt.figure(figsize=(32, 32))
-    plt.subplot(1, 2, 1)
-    plt.imshow(image.permute(1, 2, 0).numpy())
-    plt.subplot(1, 2, 2)
-    plt.imshow(mask.max(dim=0)[1], cmap=cmap, interpolation='nearest', vmin=0, vmax=5)
+    for i in range(25):
+        plt.subplot(5, 10, 2 * i + 1)
+        plt.imshow(image[i].permute(1, 2, 0).numpy())
+        plt.subplot(5, 10, 2 * i + 2)
+        plt.imshow(mask[i].max(dim=0)[1], cmap=cmap, interpolation='nearest', vmin=0, vmax=5)
