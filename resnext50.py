@@ -63,7 +63,7 @@ class ResNextV2(LightningModule):
                                     nn.Dropout(0.5),
                                     nn.Linear(512, 5))
 
-        self.mask_out = nn.Sequential(nn.ConvTranspose2d(self.feature_dim, 128, 16, stride=16),
+        self.mask_out = nn.Sequential(nn.ConvTranspose2d(self.feature_dim, 128, 8, stride=8),
                                       nn.ELU(),
                                       nn.Conv2d(128, 6, 5, padding=2))
 
@@ -165,17 +165,16 @@ class ResNextV2(LightningModule):
         avg_loss = torch.stack([x['val_loss'] for x in outputs], dim=0).mean()
         mask_loss = torch.stack([x['mask_loss'] for x in outputs], dim=0).mean()
 
-        out = torch.sigmoid(torch.cat([x['out'] for x in outputs], dim=0)).cpu().numpy()
-        y = torch.cat([x['y'] for x in outputs], dim=0).cpu().numpy()
+        out = torch.sigmoid(torch.cat([x['out'].cpu() for x in outputs], dim=0)).numpy()
+        y = torch.cat([x['y'].cpu() for x in outputs], dim=0).numpy()
 
-        out_mask = torch.sigmoid(torch.cat([x['out_mask'] for x in outputs], dim=0)).cpu().numpy()
-        mask = torch.cat([x['mask'] for x in outputs], dim=0).cpu().numpy()
+        #out_mask = torch.sigmoid(torch.cat([x['out_mask'].cpu() for x in outputs], dim=0)).numpy()
+        #mask = torch.cat([x['mask'].cpu() for x in outputs], dim=0).numpy()
 
         kappa = torch.tensor(cohen_kappa_score(np.sum(out, axis=-1).round(), y.sum(axis=-1), weights='quadratic'))
-        mask_kappa = torch.tensor(cohen_kappa_score(out_mask.round().flatten(), mask.flatten(), weights='quadratic'))
+        #mask_kappa = torch.tensor(cohen_kappa_score(out_mask.round().flatten(), mask.flatten(), weights='quadratic'))
 
-        logs = {'val_loss': avg_loss, 'kappa': kappa, 'mask_kappa': mask_kappa}
-        progbar = logs.update({'mask_loss': mask_loss})
+        logs = {'val_loss': avg_loss, 'kappa': kappa, 'mask_loss': mask_loss}
         return {'val_loss': avg_loss, 'kappa': kappa, 'log': logs, 'progress_bar': logs}
 
 argument_parser = ArgumentParser(add_help=False)
