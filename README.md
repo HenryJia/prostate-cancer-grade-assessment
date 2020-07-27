@@ -1,4 +1,4 @@
-# Code for the Kaggle PANDA Prostate Cancer Grading Comeptition
+# Code for the Kaggle PANDA Prostate Cancer Grading Competition
 
 Ultimately, during this competition, the best model I've found is to use the ResNext50 pretrained model with some data augmentation. This yielded a final leaderboard score of approximately 0.90.
 
