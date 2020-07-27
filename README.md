@@ -1,6 +1,6 @@
 # Code for the Kaggle PANDA Prostate Cancer Grading Comeptition
 
-Ultimately, during this competition, the best model I've found is to use the ResNext50 pretrained model with some data augmentation. This yielded a final leaderbaord score of approximately 0.90.
+Ultimately, during this competition, the best model I've found is to use the ResNext50 pretrained model with some data augmentation. This yielded a final leaderboard score of approximately 0.90.
 
 The code for this is relatively short and in resnext50.py
 
