@@ -28,7 +28,6 @@ from pytorch_lightning.callbacks import ModelCheckpoint, LearningRateLogger
 
 from dataset import PandaDataset
 from loader import AsynchronousLoader
-from scheduler import GradualWarmupScheduler
 
 import matplotlib.pyplot as plt
 plt.ion()
